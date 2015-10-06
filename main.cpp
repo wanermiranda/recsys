@@ -10,7 +10,7 @@
 
 using namespace std;
 
-#define NN 5
+#define NN 7
 #define NTHREADS 7
 
 std::mutex mtx;
@@ -129,6 +129,7 @@ vector< vector<size_t> > rank_vectors(double **feature_vectors, size_t size_rows
     size_t threads_count = 0;
     for (size_t ind_ext = 0; ind_ext < size_rows; ind_ext++) {
         cout << "Computing distances for items: " << ind_ext + 1 << endl;
+//        rank_for_vector(first, ind_ext, results, size_rows, size_cols);
         threads_active[threads_count] = std::thread(rank_for_vector, first, ind_ext, std::ref(results), size_rows,
                                                     size_cols);
         threads_count ++;
@@ -282,15 +283,16 @@ void review_predictions(const vector<vector<string>> &targets, vector<double> &p
         if (target_pos == targets.size() - 1)
             cout << "Last" << endl;
 
-        for (size_t target_index = 0; target_index < targets.size(); target_index ++) {
-            if (targets[target_index][0] == user_id) {
-                user_avg += predictions[target_index];
-                user_count ++;
-            }
-            if (targets[target_index][1] == item_id) {
-                item_avg += predictions[target_index];
-                item_count ++;
-            }
+        for (size_t target_index = 0; target_index < targets.size(); target_index ++)
+            if (target_index != missing_index){
+                if (targets[target_index][0] == user_id)  {
+                    user_avg += predictions[target_index];
+                    user_count ++;
+                }
+                if (targets[target_index][1] == item_id) {
+                    item_avg += predictions[target_index];
+                    item_count ++;
+                }
         }
         // filling the missing with an average rating from user or item
         if (item_count > 0) {
@@ -357,11 +359,13 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
             // Average them
             item_avg /= NN;
             // adding user bias or if there is no user, adds  5.
-            predictions.push_back(user_avg + item_avg);
+            //predictions.push_back(user_avg + item_avg);
+            predictions.push_back(item_avg);
         }// in case there is no item, set only the user bias average or if there is no user, set to 5.
         else {
             predictions.push_back(user_avg);
-            missing_predictions.push_back(index);
+            if (users.find(targets[index][0]) == users.end())
+                missing_predictions.push_back(index);
         }
         if (index == targets.size() - 1)
             cout << "Last" << endl;
