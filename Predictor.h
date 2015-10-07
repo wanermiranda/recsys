@@ -7,6 +7,7 @@
 #define OVERFLOW_DISTANCE -1
 #define NN 2
 #define NTHREADS 7
+#define BIAS
 
 #include <iostream>
 #include <thread>

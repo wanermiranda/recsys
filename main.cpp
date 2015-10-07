@@ -7,9 +7,10 @@
 #include "ArrayUtils.h"
 #include "Predictor.h"
 
+
 using namespace std;
 
-//#define BIAS
+
 
 
 void read_targets(char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
@@ -56,7 +57,7 @@ int main(int argc, char **argv) {
     read_ratings(argv[1], users, items, rows, users_stats, items_stats);
 
     cout << "Rows: " << rows.size() << " Users: " << users.size() << " Items: " << items.size()
-         << " Targets :" << target_items.size()<< endl;
+    << " Targets :" << target_items.size() << endl;
     cout << "Transposing  data..." << endl;
 
     // Computing users average
@@ -67,15 +68,9 @@ int main(int argc, char **argv) {
     float **items_fvs = alloc_2D_array<float>(items.size(), users.size());
     init_array(users, items, items_fvs);
 
-//    float **items_running_flag;
-//    init_array(users, items, items_running_flag);
-
-
     extract_fvs(users, items, rows, items_fvs, users_stats, items_stats);
 
-//    print_array(users, items, items_fvs);
-//    cout << "running" << endl;
-//    print_array(users, items, items_running_flag);
+
 
     // Computing item average after removing the user bias
 //    compute_stats_avg(items_stats);
@@ -84,63 +79,8 @@ int main(int argc, char **argv) {
     cout << "Computing and Ranking Similiraties..." << endl;
     rows.clear();
 
-    vector<vector<pair<size_t ,float>>> ranking_item = rank_vectors(items_fvs, target_items, items.size(), users.size());
-
-    /*******/
-//    vector<vector<pair<size_t, float>>> ranking_item(items.size());
-//    float **feature_vectors = items_fvs;
-//
-//
-//    for (size_t query_index = 0; query_index < items.size(); query_index++) {
-//        timestamp_t t0 = get_timestamp();
-//        float similarities[NN];
-//        size_t neighbors[NN];
-//        vector<pair<size_t, float>> result(NN);
-//        for (int i = 0; i < NN; i++)
-//            similarities[i] = OVERFLOW_DISTANCE;
-//        for (size_t target_index = 0; target_index < items.size(); target_index++) {
-//            if (query_index != target_index) { // skipping itself
-//                timestamp_t t01 = get_timestamp();
-//
-//                float target_distance = cosine_distance(feature_vectors[query_index], feature_vectors[target_index],
-//                                                         users.size());
-//
-//
-//                if (target_distance >= similarities[NN - 1]) {
-//                    float hold_similarity = target_distance;
-//                    size_t hold_neighbor = target_index;
-//                     Rearrange neighbors
-//                    for (size_t counter = 0; counter < NN; counter++) {
-//                        if ((hold_similarity >= similarities[counter])) {
-//
-//                            float aux_distance = similarities[counter];
-//                            size_t aux_neighbor = neighbors[counter];
-//
-//                            similarities[counter] = hold_similarity;
-//                            neighbors[counter] = hold_neighbor;
-//                            result[counter] = make_pair(hold_neighbor, hold_similarity);
-//
-//                            hold_similarity = aux_distance;
-//                            hold_neighbor = aux_neighbor;
-//                        }
-//                    }
-//
-//                }
-//                timestamp_t t10 = get_timestamp();
-//
-//                float secs = (t10 - t01) / 1000000.0L;
-//
-//                cout << "Item Ranking:" << secs << endl;
-//
-//            }
-//
-//        }
-//        timestamp_t t1 = get_timestamp();
-//        float secs = (t1 - t0) / 1000000.0L;
-//
-//        cout << "Query Ranking:" << secs << endl;
-//        ranking_item[query_index] = result;
-//    }
+    vector<vector<pair<size_t, float>>> ranking_item = rank_vectors(items_fvs, target_items, items.size(),
+                                                                    users.size());
 
 
 
@@ -228,26 +168,52 @@ void print_array(const unordered_map<string, size_t> &users, const unordered_map
 void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
                  const vector<vector<string>> &rows, float **items_fvs, vector<vector<float>> &users_stats,
                  vector<vector<float>> &items_stats) {
+    float min_max[items.size()][2];
+    for (int item = 0; item < items.size(); item++) {
+        min_max[item][0] = 11;
+        min_max[item][1] = -10;
+    }
     for (size_t index = 0; index < rows.size(); index++) {
         size_t user_pos = users.at(rows[index][0]);
         size_t item_pos = items.at(rows[index][1]);
-#ifdef BIAS
-        float vote = stod(rows[index][2]) - users_stats[user_pos][1];
-#else
         float vote = stod(rows[index][2]);
-#endif //BIAS
+
         items_fvs[item_pos][user_pos] = vote;
     }
 
-//    for (int item = 0; item < items.size(); item ++) {
-//        int flag_pos = 0;
-//        for (int user=0; user < users.size(); user++) {
-//            if (items_fvs[item][user] != 0)
-//                items_running_flag[item][flag_pos++] = user;
-//        }
-//        if (flag_pos < users.size())
-//            items_running_flag[item][flag_pos++] = -1;
-//    }
+#ifdef BIAS
+    cout << "Clean" << endl;
+    print_array(users, items, items_fvs);
+
+    for (int item = 0; item < items.size(); item++) {
+
+        for (int user = 0; user < users.size(); user++) {
+
+            float adjusted_vote = items_fvs[item][user] - users_stats[user][1];
+
+            if (adjusted_vote <= min_max[item][0])
+                min_max[item][0] = adjusted_vote;
+
+            if (adjusted_vote >= min_max[item][1])
+                min_max[item][1] = adjusted_vote;
+
+            items_fvs[item][user] = adjusted_vote;
+        }
+    }
+
+    cout << "Adjusted" << endl;
+    print_array(users, items, items_fvs);
+
+    for (int item = 0; item < items.size(); item++) {
+        float min = min_max[item][0];
+        float max = min_max[item][1];
+        for (int user = 0; user < users.size(); user++) {
+            items_fvs[item][user] = ((items_fvs[item][user] - min) / (max - min)) * 10;
+        }
+    }
+    cout << "normalized" << endl;
+    print_array(users, items, items_fvs);
+#endif
 }
 
 void read_ratings(const char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
@@ -261,7 +227,7 @@ void read_ratings(const char *filename, unordered_map<string, size_t> &users, un
     while (ratings_file >> row_reader) {
         vector<string> user_item = split(row_reader[0], ':');
 //        if ((items.find(user_item[1]) != items.end()) || (users.find(user_item[0]) != users.end()))
-         {
+        {
             rows.push_back(vector<string>({user_item[0], user_item[1], row_reader[1]}));
             row_count++;
 

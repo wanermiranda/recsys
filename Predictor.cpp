@@ -280,9 +280,9 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
                 predictions.push_back(user_avg);
                 missing_predictions.push_back(index);
             }
-            else    // adding user bias or if there is no user, adds  5. //predictions.push_back(user_avg + item_avg);
+            else
                 predictions.push_back(item_avg);
-        }// in case there is no item, set only the user bias average or if there is no user, set to 5.
+        }
         else {
             predictions.push_back(user_avg);
             if (users.find(targets[index][0]) == users.end())
