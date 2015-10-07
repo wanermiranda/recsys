@@ -5,13 +5,14 @@
 #include <stdlib.h>
 
 template <typename T> T **alloc_2D_array(size_t M, size_t N) {
-    T **array = (T **)malloc(sizeof (T) * M);
+    T **array;
+    array = (T **)malloc(sizeof (*array) * M);
     if (array)
     {
 
         for (size_t i = 0; i < M; i++)
         {
-            array[i] = (T *)malloc(sizeof(*array[i]) * N);
+            array[i] = (T *)malloc(N * (sizeof *array[i]));
         }
     }
     return array;
