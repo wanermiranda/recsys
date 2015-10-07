@@ -1,158 +1,28 @@
 #include <iostream>
 #include <map>
+#include <algorithm>
+#include <unordered_map>
 #include "StringUtils.h"
 #include "CSVReader.h"
-#include <unordered_map>
-#include <algorithm>
-#include <set>
-#include <thread>
-#include <mutex>
+#include "ArrayUtils.h"
+#include "Predictor.h"
 
 using namespace std;
-#define BIAS
-#define NN 7
-#define NTHREADS 8
 
-std::mutex mtx;
-
-double **alloc_double_fv(size_t size_rows, size_t size_cols) {
-    double **a = (double **) malloc(sizeof *a * size_rows);
-    if (a) {
-        for (int i = 0; i < size_rows; i++) {
-            a[i] = (double *) malloc(sizeof *a[i] * size_cols);
-        }
-    }
-    return a;
-}
-
-void avg_predictions_personalized(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                                  const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                                  const vector<vector<string>> &targets,
-                                  vector<double> &predictions, vector<double> &missing_predictions);
-
-void avg_predictions(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                     const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                     const vector<vector<string>> &targets,
-                     vector<double> &predictions, vector<double> &missing_predictions);
-
-auto distance_comparer = [](const std::pair<double, size_t> &a, const std::pair<double, size_t> &b) {
-    return (a.first < b.first && a.second != b.second);
-};
-
-void rank_vector(const vector<vector<double>> &feature_vectors, size_t query_index, vector<vector<size_t>> &results);
-
-void user_predictions(unordered_map<string, size_t> &users, const vector<vector<double>> &users_stats,
-                      const vector<vector<size_t>> &ranking_user, const vector<vector<string>> &targets,
-                      vector<double> &predictions, vector<double> &missing_predictions);
-
-void item_predictions(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                      const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                      const vector<vector<size_t>> &ranking_item, const vector<vector<string>> &targets,
-                      vector<double> &predictions, vector<double> &missing_predictions);
-
-void review_predictions(const vector<vector<string>> &targets, vector<double> &predictions,
-                        vector<double> &missing_predictions);
-
-void compute_stats_avg(vector<vector<double>> &stats);
+//#define BIAS
 
 
-double cosine_distance(const double *vector1, const double *vector2, size_t size_cols) {
-    double dot_product = 0.0, sum_v1 = 0.0, sum_v2 = 0.0;
-    double norm_v1, norm_v2;
+void read_targets(char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
+                  vector<vector<double>> &users_stats, vector<vector<double>> &items_stats,
+                  vector<vector<string>> &targets);
 
-    long size = size_cols;
+void read_ratings(const char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
+                  vector<vector<string>> &rows, vector<vector<double>> &users_stats,
+                  vector<vector<double>> &items_stats);
 
-    for (size_t index = 0; index < size; index++) {
-        dot_product += vector1[index] * vector2[index];
-        sum_v1 += vector1[index] * vector1[index];
-        sum_v2 += vector2[index] * vector2[index];
-    }
-
-    norm_v1 = sqrt(sum_v1);
-    norm_v2 = sqrt(sum_v2);
-
-    double simmilarity = dot_product / (norm_v1 * norm_v2);
-    return 1 - simmilarity;
-}
-
-double manhattan_distance(vector<double> vector1, vector<double> vector2) {
-    double dist = 0;
-
-    for (size_t index = 0; index < vector1.size(); index++) {
-        dist += abs(vector1[index] - vector2[index]);
-    }
-    return dist;
-}
-
-void rank_for_vector(void *fv_pointer, size_t query_index, vector<vector<size_t>> &results, size_t size_rows,
-                     size_t size_cols) {
-    double distances[NN] = {2.0, 2.0, 2.0, 2.0, 2.0};
-    size_t neighbors[NN];
-    if (double **feature_vectors = reinterpret_cast<double **>(fv_pointer)) {
-        for (size_t target_index = 0; target_index < size_rows; target_index++) {
-            if (query_index != target_index) { // skipping itself
-                double target_distance = cosine_distance(feature_vectors[query_index], feature_vectors[target_index],
-                                                         size_cols);
-                if (target_distance <= distances[NN - 1]) {
-                    double hold_distance = target_distance;
-                    size_t hold_neighbor = target_index;
-                    // Rearrange neighbors
-                    for (size_t counter = 0; counter < NN; counter++) {
-                        if ((hold_distance <= distances[counter])) {
-
-                            double aux_distance = distances[counter];
-                            size_t aux_neighbor = neighbors[counter];
-
-                            distances[counter] = hold_distance;
-                            neighbors[counter] = hold_neighbor;
-
-                            hold_distance = aux_distance;
-                            hold_neighbor = aux_neighbor;
-                        }
-                    }
-
-                }
-            }
-        }
-    }
-
-
-    mtx.lock();
-    results.push_back(vector<size_t>(std::begin(neighbors), std::end(neighbors)));
-    mtx.unlock();
-}
-
-std::string now(const char *format = "%c") {
-    std::time_t t = std::time(0);
-    char cstr[128];
-    std::strftime(cstr, sizeof(cstr), format, std::localtime(&t));
-    return cstr;
-}
-
-vector<vector<size_t> > rank_vectors(double **feature_vectors, size_t size_rows, size_t size_cols) {
-    vector<vector<size_t> > results(size_rows, vector<size_t>(NN));
-    void *first = (double *) feature_vectors;
-    std::thread threads_active[NTHREADS];
-    size_t threads_count = 0;
-    for (size_t ind_ext = 0; ind_ext < size_rows; ind_ext++) {
-        cout << "Computing distances for items: " << ind_ext + 1 << endl;
-//        rank_for_vector(first, ind_ext, results, size_rows, size_cols);
-        threads_active[threads_count] = std::thread(rank_for_vector, first, ind_ext, std::ref(results), size_rows,
-                                                    size_cols);
-        threads_count++;
-        if (threads_count >= NTHREADS) {
-            std::cout << now() << endl;
-            threads_count = 0;
-            for (size_t i = 0; i < NTHREADS; i++)
-                threads_active[i].join();
-        } else if (ind_ext + 1 == size_rows) {
-            for (size_t i = 0; i < threads_count; i++)
-                threads_active[i].join();
-        }
-    }
-    return results;
-}
-
+void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
+                 const vector<vector<string>> &rows, double *const *items_fvs, vector<vector<double>> &users_stats,
+                 vector<vector<double>> &items_stats);
 
 int main(int argc, char **argv) {
     if (argc < 4) {
@@ -161,102 +31,49 @@ int main(int argc, char **argv) {
     }
     unordered_map<string, size_t> users;
     unordered_map<string, size_t> items;
+    vector<vector<string> > targets;
 
     // The stats will hold the values for {count, avg, sum},
     vector<vector<double>> users_stats;
     vector<vector<double>> items_stats;
 
     vector<vector<string> > rows;
-    size_t user_count = 0, item_count = 0, row_count = 0;
 
-    CSVReader row_reader;
-    // Skip the header
-    ifstream ratings_file(argv[1]);
-    ratings_file >> row_reader;
-    while (ratings_file >> row_reader) {
-        vector<string> user_item = split(row_reader[0], ':');
-        rows.push_back(vector<string>({user_item[0], user_item[1], row_reader[1]}));
-        row_count++;
-        double vote = stod(row_reader[1]);
-
-        if (users.find(user_item[0]) == users.end()) {
-            users.insert({user_item[0], user_count++});
-            users_stats.push_back(vector<double>({1, 0, vote}));
-        }
-        else {
-            size_t user_pos = users.at(user_item[0]);
-            users_stats[user_pos][0]++;
-            users_stats[user_pos][2] = users_stats[user_pos][2] + vote;
-        }
+    read_targets(argv[2], users, items, users_stats, items_stats, targets);
 
 
-        if (items.find(user_item[1]) == items.end()) {
-            items.insert({user_item[1], item_count++});
-            items_stats.push_back(vector<double>({1, 0, vote}));
+    read_ratings(argv[1], users, items, rows, users_stats, items_stats);
 
-        }
-        else {
-            size_t item_pos = items.at(user_item[1]);
-            items_stats[item_pos][2] = items_stats[item_pos][2] + vote;
-            items_stats[item_pos][0]++;
-        }
-
-    }
-    ratings_file.close();
+    cout << "Rows: " << rows.size() << " Users: " << users.size() << " Items: " << items.size() << endl;
+    cout << "Transposing  data..." << endl;
 
     // Computing users average
     compute_stats_avg(users_stats);
     compute_stats_avg(items_stats);
 
 
-    cout << "Rows: " << rows.size() << " Users: " << users.size() << " Items: " << items.size() << endl;
-    cout << "Transposing  data..." << endl;
-    double **items_fvs = alloc_double_fv(item_count, user_count);
-    for (size_t index = 0; index < rows.size(); index++) {
-        size_t user_pos = users.at(rows[index][0]);
-        size_t item_pos = items.at(rows[index][1]);
-#ifdef BIAS
-        double vote = stod(rows[index][2]) - users_stats[user_pos][1];
-#else
-        double vote = stod(rows[index][2]);
-#endif //BIAS
-
-
-
-        users_stats[user_pos][2] += vote;
-        items_stats[item_pos][2] += vote;
-
-        items_fvs[item_pos][user_pos] = vote;
-    }
+    double **items_fvs = alloc_2D_array<double>(items.size(), users.size());
+    extract_fvs(users, items, rows, items_fvs, users_stats, items_stats);
 
     // Computing item average after removing the user bias
-    compute_stats_avg(items_stats);
+//    compute_stats_avg(items_stats);
 
 
     cout << "Computing and Ranking Similiraties..." << endl;
     rows.clear();
 
-//    vector<vector<size_t> > ranking_item = rank_vectors(items_fvs, item_count, user_count);
+    vector<vector<size_t> > ranking_item = rank_vectors(items_fvs, items.size(), users.size());
 
     delete items_fvs;
-
-    cout << "Reading targets..." << endl;
-    ifstream targets_file(argv[2]);
-    vector<vector<string> > targets;
-
-    // Skip the header
-    targets_file >> row_reader;
-    while (targets_file >> row_reader)
-        targets.push_back(split(row_reader[0], ':'));
-
-    targets_file.close();
 
     cout << "Pre-processing predictions..." << endl;
     vector<double> predictions;
     vector<double> missing_predictions;
-//    item_predictions(users, items, users_stats, items_stats, ranking_item, targets, predictions, missing_predictions);
+    item_predictions(users, items, users_stats, items_stats, ranking_item, targets, predictions, missing_predictions);
 
-    avg_predictions_personalized(users, items, users_stats, items_stats, targets, predictions, missing_predictions);
+//    avg_predictions_personalized(users, items, users_stats, items_stats, targets, predictions, missing_predictions);
+
+    avg_predictions(users, items, users_stats, items_stats, targets, predictions, missing_predictions);
 
     users.clear();
     items.clear();
@@ -278,181 +95,98 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void compute_stats_avg(vector<vector<double>> &stats) {// Overall average
-    for (size_t index = 0; index < stats.size(); index++) {
-        stats[index][1] = stats[index][2] / stats[index][0];
-        // Zeroing the sum to a new average
-        stats[index][2] = 0;
+void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
+                 const vector<vector<string>> &rows, double *const *items_fvs, vector<vector<double>> &users_stats,
+                 vector<vector<double>> &items_stats) {
+    for (size_t index = 0; index < rows.size(); index++) {
+        size_t user_pos = users.at(rows[index][0]);
+        size_t item_pos = items.at(rows[index][1]);
+#ifdef BIAS
+        double vote = stod(rows[index][2]) - users_stats[user_pos][1];
+#else
+        double vote = stod(rows[index][2]);
+#endif //BIAS
+
+
+//        users_stats[user_pos][2] += vote;
+//        items_stats[item_pos][2] += vote;
+
+        items_fvs[item_pos][user_pos] = vote;
     }
 }
 
+void read_ratings(const char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
+                  vector<vector<string>> &rows, vector<vector<double>> &users_stats,
+                  vector<vector<double>> &items_stats) {
+    ifstream ratings_file(filename);
+    CSVReader row_reader;
+    size_t row_count = 0;
+    // Skip the header
+    ratings_file >> row_reader;
+    while (ratings_file >> row_reader) {
+        vector<string> user_item = split(row_reader[0], ':');
 
-void review_predictions(const vector<vector<string>> &targets, vector<double> &predictions,
-                        vector<double> &missing_predictions) {
-    // From the missing predictions, speculate a possible value based on the average ratings 4 same users or items
-    for (size_t missing_index = 0; missing_index < missing_predictions.size(); missing_index++) {
-        size_t target_pos = missing_predictions[missing_index];
-        string user_id = targets[target_pos][0];
-        string item_id = targets[target_pos][1];
-        double item_count = 0, user_count = 0;
-        double item_avg = 0, user_avg = 0;
-        if (target_pos == targets.size() - 1)
-            cout << "Last" << endl;
+        if ((users.find(user_item[0]) != users.end()) || (items.find(user_item[1]) != items.end())) {
+            rows.push_back(vector<string>({user_item[0], user_item[1], row_reader[1]}));
+            row_count++;
 
-        for (size_t target_index = 0; target_index < targets.size(); target_index++)
-            if ((targets[target_index][0] != user_id) || (targets[target_index][1] == item_id)){
-                if (targets[target_index][0] == user_id) {
-                    user_avg += predictions[target_index];
-                    user_count++;
-                }
-                if (targets[target_index][1] == item_id) {
-                    item_avg += predictions[target_index];
-                    item_count++;
-                }
+            double vote = stod(row_reader[1]);
+
+            if (users.find(user_item[0]) != users.end()) {
+                size_t user_pos = users.at(user_item[0]);
+                users_stats[user_pos][0]++;
+
+                if (users_stats[user_pos][2] == -1)
+                    users_stats[user_pos][2] = vote;
+                else users_stats[user_pos][2] += vote;
+            }else{
+                users.insert({user_item[0], users.size()});
+                users_stats.push_back(vector<double>({1, 0, vote}));
             }
-        // filling the missing with an average rating from user or item
-        if (user_count > 0) {
-            user_avg /= user_count;
-            predictions[target_pos] = user_avg;
-        } else
-        if (item_count > 0) {
-            item_avg /= item_count;
-            predictions[target_pos] = item_avg;
+
+            if ((items.find(user_item[1]) != items.end())) {
+                size_t item_pos = items.at(user_item[1]);
+                items_stats[item_pos][0]++;
+
+                if (items_stats[item_pos][2] == -1)
+                    items_stats[item_pos][2] = vote;
+                else items_stats[item_pos][2] += vote;
+
+            } else {
+                items.insert({user_item[1], items.size()});
+                items_stats.push_back(vector<double>({1, 0, vote}));
+            }
         }
-
-
-
     }
+    ratings_file.close();
 }
 
 
-void avg_predictions(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                     const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                     const vector<vector<string>> &targets,
-                     vector<double> &predictions, vector<double> &missing_predictions) {
-    {
-        for (int index = 0; index < targets.size(); index++)
-        {
-            if (items.find(targets[index][1]) != items.end()) {
-                int item_pos = items.at(targets[index][1]);
-                predictions.push_back(items_stats[item_pos][1]);
-            }
-            else if (users.find(targets[index][0]) != users.end()) {
-                int user_pos = users.at(targets[index][0]);
-                predictions.push_back(users_stats[user_pos][1]);
-            }
-            else {
-                predictions.push_back(5);
-                missing_predictions.push_back(index);
-            }
+void read_targets(char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
+                  vector<vector<double>> &users_stats, vector<vector<double>> &items_stats,
+                  vector<vector<string>> &targets) {
+    CSVReader row_reader;
+    cout << "Reading targets..." << endl;
+    ifstream targets_file(filename);
+    size_t user_count = 0, item_count = 0, target_count = 0;
+    // Skip the header
+    targets_file >> row_reader;
+
+    while (targets_file >> row_reader) {
+
+        targets.push_back(split(row_reader[0], ':'));
+
+        if (users.find(targets[target_count][0]) == users.end()) {
+            users.insert({targets[target_count][0], user_count++});
+            users_stats.push_back(vector<double>({0, 0, -1}));
         }
+
+        if (items.find(targets[target_count][1]) == items.end()) {
+            items.insert({targets[target_count][1], item_count++});
+            items_stats.push_back(vector<double>({0, 0, -1}));
+        }
+        target_count++;
     }
-}
 
-
-
-void avg_predictions_personalized(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                                  const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                                  const vector<vector<string>> &targets,
-                                  vector<double> &predictions, vector<double> &missing_predictions) {
-    {
-
-        for (int index = 0; index < targets.size(); index++) {
-            double user_avg = 5;
-            double item_avg = 5;
-            // getting the user bias
-            if (users.find(targets[index][0]) != users.end()) {
-                size_t user_pos = users.at(targets[index][0]);
-                user_avg = users_stats[user_pos][1];
-            }
-
-            if (items.find(targets[index][1]) != items.end()) {
-                int item_pos = items.at(targets[index][1]);
-                item_avg = items_stats[item_pos][1];
-                predictions.push_back(user_avg + items_stats[item_pos][1]);
-
-            }
-            else if (users.find(targets[index][0]) != users.end()) {
-                predictions.push_back(user_avg);
-            }
-            else {
-                predictions.push_back(user_avg);
-                missing_predictions.push_back(index);
-            }
-
-            if (predictions[index] > 10) {
-                cout << "Error " <<  predictions[index] << "= " << item_avg << " + " << user_avg<<endl;
-                predictions[index]= 10;
-            }
-            if (predictions[index] < 0) {
-                cout << "Error " <<  predictions[index] << "= " << item_avg << " + " << user_avg<<endl;
-                predictions[index]= 00;
-            }
-
-
-        }
-    }
-}
-
-void user_predictions(unordered_map<string, size_t> &users, const vector<vector<double>> &users_stats,
-                      const vector<vector<size_t>> &ranking_user, const vector<vector<string>> &targets,
-                      vector<double> &predictions, vector<double> &missing_predictions) {
-    for (size_t index = 0; index < targets.size(); index++) {
-        if (users.find(targets[index][0]) != users.end()) {
-            size_t target_user_pos = users.at(targets[index][0]);
-            double avg = 0;
-
-            // Capturing the average rating from the nearest neighbors
-            for (size_t vect_index = 0; vect_index < NN; vect_index++) {
-                size_t user_pos = ranking_user[target_user_pos][vect_index];
-                avg += double(users_stats[user_pos][1]);
-            }
-            // Average them
-            avg /= NN;
-            predictions.push_back(avg);
-        }
-        else {
-            predictions.push_back(5);
-            missing_predictions.push_back(index);
-        }
-
-    }
-}
-
-void item_predictions(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
-                      const vector<vector<double>> &users_stats, const vector<vector<double>> &items_stats,
-                      const vector<vector<size_t>> &ranking_item, const vector<vector<string>> &targets,
-                      vector<double> &predictions, vector<double> &missing_predictions) {
-    for (size_t index = 0; index < targets.size(); index++) {
-        double user_avg = 5;
-        // getting the user bias
-        if (users.find(targets[index][0]) != users.end()) {
-            size_t user_pos = users.at(targets[index][0]);
-            user_avg = users_stats[user_pos][1];
-        }
-
-        // Look for the item within the ranking
-        if (items.find(targets[index][1]) != items.end()) {
-            size_t target_item_pos = items.at(targets[index][1]);
-            double item_avg = 0;
-
-            // Capturing the average rating from the nearest neighbors of the item
-            for (size_t vect_index = 0; vect_index < NN; vect_index++) {
-                size_t item_pos = ranking_item[target_item_pos][vect_index];
-                item_avg += double(items_stats[item_pos][1]);
-            }
-            // Average them
-            item_avg /= NN;
-            // adding user bias or if there is no user, adds  5.
-            //predictions.push_back(user_avg + item_avg);
-            predictions.push_back(item_avg);
-        }// in case there is no item, set only the user bias average or if there is no user, set to 5.
-        else {
-            predictions.push_back(user_avg);
-            if (users.find(targets[index][0]) == users.end())
-                missing_predictions.push_back(index);
-        }
-        if (index == targets.size() - 1)
-            cout << "Last" << endl;
-    }
+    targets_file.close();
 }
