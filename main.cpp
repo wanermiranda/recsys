@@ -166,7 +166,7 @@ void print_array(const unordered_map<string, size_t> &users, const unordered_map
             cout << items_fvs[item][user] << "\t";
         cout << endl;
     }
-#endif
+#endif // DEBUG
 }
 
 void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
@@ -228,12 +228,14 @@ void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map
         }
         // Placing a new average
 //        items_stats[item][1] = items_stats[item][2] / items_stats[item][0];
+#ifdef DEBUG
         cout << "AVG Item:" << item << ":" << items_stats[item][1] << endl;
     }
+#endif // DEBUG
 
     cout << "normalized" << endl;
     print_array(users, items, items_fvs);
-#endif
+#endif // BIAS
 }
 
 void read_ratings(const char *filename, unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
