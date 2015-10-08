@@ -152,8 +152,8 @@ void avg_predictions(unordered_map<string, size_t> &users, unordered_map<string,
     {
         for (int index = 0; index < targets.size(); index++) {
 
-            int item_pos = items.at(targets[index][1]);
-            int user_pos = users.at(targets[index][0]);
+            int item_pos = items.at(targets[index][0]);
+            int user_pos = users.at(targets[index][1]);
 
             if (items_stats[item_pos][2] != -1)
                 predictions.push_back(items_stats[item_pos][1]);
@@ -180,13 +180,13 @@ void avg_predictions_personalized(unordered_map<string, size_t> &users, unordere
             float user_avg = 5;
             float item_avg = 5;
             // getting the user bias
-            if (users.find(targets[index][0]) != users.end()) {
-                size_t user_pos = users.at(targets[index][0]);
+            if (users.find(targets[index][1]) != users.end()) {
+                size_t user_pos = users.at(targets[index][1]);
                 user_avg = users_stats[user_pos][1];
             }
 
-            if (items.find(targets[index][1]) != items.end()) {
-                int item_pos = items.at(targets[index][1]);
+            if (items.find(targets[index][0]) != items.end()) {
+                int item_pos = items.at(targets[index][0]);
                 item_avg = items_stats[item_pos][1];
 #ifdef BIAS
                 predictions.push_back(user_avg + items_stats[item_pos][1]);
@@ -195,7 +195,7 @@ void avg_predictions_personalized(unordered_map<string, size_t> &users, unordere
 #endif
 
             }
-            else if (users.find(targets[index][0]) != users.end()) {
+            else if (users.find(targets[index][1]) != users.end()) {
                 predictions.push_back(user_avg);
             }
             else {
@@ -222,8 +222,8 @@ void user_predictions(unordered_map<string, size_t> &users, const vector<vector<
                       const vector<vector<size_t>> &ranking_user, const vector<vector<string>> &targets,
                       vector<float> &predictions, vector<float> &missing_predictions) {
     for (size_t index = 0; index < targets.size(); index++) {
-        if (users.find(targets[index][0]) != users.end()) {
-            size_t target_user_pos = users.at(targets[index][0]);
+        if (users.find(targets[index][1]) != users.end()) {
+            size_t target_user_pos = users.at(targets[index][1]);
             float avg = 0;
 
             // Capturing the average rating from the nearest neighbors
@@ -252,17 +252,17 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
         float user_avg = 5;
         // getting the user bias
         size_t user_pos;
-        if (users.find(targets[index][0]) != users.end()) {
-            user_pos = users.at(targets[index][0]);
+        if (users.find(targets[index][1]) != users.end()) {
+            user_pos = users.at(targets[index][1]);
             user_avg = users_stats[user_pos][1];
             if (user_avg == 0)
                 user_avg = 5;
         }
 
         // Look for the item within the ranking
-        if (items.find(targets[index][1]) != items.end()) {
+        if (items.find(targets[index][0]) != items.end()) {
             float item_avg = 0;
-            size_t query_pos =items.at(targets[index][1]);
+            size_t query_pos =items.at(targets[index][0]);
             // Capturing the average rating from the nearest neighbors of the item
             float base = 0;
             for (size_t vect_index = 0; vect_index < NN; vect_index++) {
@@ -285,7 +285,57 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
         }
         else {
             predictions.push_back(user_avg);
-            if (users.find(targets[index][0]) == users.end())
+            if (users.find(targets[index][1]) == users.end())
+                missing_predictions.push_back(index);
+        }
+        if (index == targets.size() - 1)
+            cout << "Last" << endl;
+    }
+}
+
+
+void user_predictions(unordered_map<string, size_t> &items, unordered_map<string, size_t> &users,
+                      vector<vector<float>> &items_stats, vector<vector<float>> &users_stats,
+                      vector<vector<pair<size_t, float>>> &ranking_user, vector<vector<string>> &targets,
+                      vector<float> &predictions, vector<float> &missing_predictions, float **users_fvs) {
+    for (size_t index = 0; index < targets.size(); index++) {
+        float item_avg = 5;
+        // getting the item bias
+        size_t item_pos;
+        if (items.find(targets[index][1]) != items.end()) {
+            item_pos = items.at(targets[index][1]);
+            item_avg = items_stats[item_pos][1];
+            if (item_avg == 0)
+                item_avg = 5;
+        }
+
+        // Look for the user within the ranking
+        if (users.find(targets[index][0]) != users.end()) {
+            float user_avg = 0;
+            size_t query_pos =users.at(targets[index][0]);
+            // Capturing the average rating from the nearest neighbors of the user
+            float base = 0;
+            for (size_t vect_index = 0; vect_index < NN; vect_index++) {
+                size_t user_pos = ranking_user[query_pos][vect_index].first;
+                float value = users_fvs[user_pos][item_pos];
+                if ((value == 0) || isnan(value))
+                    value = users_stats[user_pos][1];
+                user_avg += ranking_user[query_pos][vect_index].second * value;
+                base +=  ranking_user[query_pos][vect_index].second;
+            }
+            // Average them
+            user_avg /= base;
+
+            if (base == 0) {
+                predictions.push_back(item_avg);
+                missing_predictions.push_back(index);
+            }
+            else
+                predictions.push_back(user_avg);
+        }
+        else {
+            predictions.push_back(item_avg);
+            if (items.find(targets[index][1]) == items.end())
                 missing_predictions.push_back(index);
         }
         if (index == targets.size() - 1)

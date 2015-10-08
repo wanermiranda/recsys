@@ -5,9 +5,9 @@
 #ifndef TP1_RECSYS_PREDICTOR_H
 #define TP1_RECSYS_PREDICTOR_H
 #define OVERFLOW_DISTANCE -1
-#define NN 21
+#define NN 2
 #define NTHREADS 7
-#define BIAS
+//#define BIAS
 
 #include <iostream>
 #include <thread>
@@ -47,9 +47,10 @@ void avg_predictions(unordered_map<string, size_t> &users, unordered_map<string,
 vector<vector<pair<size_t, float>>> rank_vectors(float **feature_vectors, vector<size_t> target_items,
                                                  size_t size_rows,size_t size_cols);
 
-void user_predictions(unordered_map<string, size_t> &users, const vector<vector<float>> &users_stats,
-                      const vector<vector<size_t>> &ranking_user, const vector<vector<string>> &targets,
-                      vector<float> &predictions, vector<float> &missing_predictions);
+void user_predictions(unordered_map<string, size_t> &items, unordered_map<string, size_t> &users,
+                      vector<vector<float>> &items_stats, vector<vector<float>> &users_stats,
+                      vector<vector<pair<size_t, float>>> &ranking_user, vector<vector<string>> &targets,
+                      vector<float> &predictions, vector<float> &missing_predictions, float **users_fvs);
 
 void item_predictions(unordered_map<string, size_t> &users, unordered_map<string, size_t> &items,
                       vector<vector<float>> &users_stats, vector<vector<float>> &items_stats,
