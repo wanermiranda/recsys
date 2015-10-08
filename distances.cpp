@@ -10,7 +10,6 @@ float cosine_distance(const float *vector1, const float *vector2,size_t size_col
     float dot_product = 0.0, sum_v1 = 0.0, sum_v2 = 0.0;
     float norm_v1, norm_v2;
 
-
     for (size_t index = 0; index < size_cols; index ++) {
 
         if ((vector1[index] + vector2[index] != 0)) {

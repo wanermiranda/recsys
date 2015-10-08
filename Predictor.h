@@ -5,7 +5,7 @@
 #ifndef TP1_RECSYS_PREDICTOR_H
 #define TP1_RECSYS_PREDICTOR_H
 #define OVERFLOW_DISTANCE -1
-#define NN 2
+#define NN 21
 #define NTHREADS 7
 #define BIAS
 

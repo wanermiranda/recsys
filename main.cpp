@@ -8,6 +8,8 @@
 #include "Predictor.h"
 
 
+#define NONE_VALUE -99
+#define DEBUG
 using namespace std;
 
 
@@ -152,17 +154,19 @@ void init_array(const unordered_map<string, size_t> &users, const unordered_map<
                 float **items_fvs) {
     for (int item = 0; item < items.size(); item++) {
         for (int user = 0; user < users.size(); user++)
-            items_fvs[item][user] = 0.0;
+            items_fvs[item][user] = NONE_VALUE;
     }
 }
 
 void print_array(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
                  float *const *items_fvs) {
+#ifdef DEBUG
     for (int item = 0; item < items.size(); item++) {
         for (int user = 0; user < users.size(); user++)
             cout << items_fvs[item][user] << "\t";
         cout << endl;
     }
+#endif
 }
 
 void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map<string, size_t> &items,
@@ -191,13 +195,16 @@ void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map
 
             float adjusted_vote = items_fvs[item][user] - users_stats[user][1];
 
-            if (adjusted_vote <= min_max[item][0])
-                min_max[item][0] = adjusted_vote;
+            if (items_fvs[item][user] != NONE_VALUE) {
+                if (adjusted_vote <= min_max[item][0])
+                    min_max[item][0] = adjusted_vote;
 
-            if (adjusted_vote >= min_max[item][1])
-                min_max[item][1] = adjusted_vote;
+                if (adjusted_vote >= min_max[item][1])
+                    min_max[item][1] = adjusted_vote;
 
-            items_fvs[item][user] = adjusted_vote;
+
+                items_fvs[item][user] = adjusted_vote;
+            }
         }
     }
 
@@ -207,10 +214,23 @@ void extract_fvs(const unordered_map<string, size_t> &users, const unordered_map
     for (int item = 0; item < items.size(); item++) {
         float min = min_max[item][0];
         float max = min_max[item][1];
+        // Resetting the item Statistics during the normalization
+//        items_stats[item][0] = 0;
+//        items_stats[item][2] = 0;
         for (int user = 0; user < users.size(); user++) {
-            items_fvs[item][user] = ((items_fvs[item][user] - min) / (max - min)) * 10;
+            if (items_fvs[item][user] == NONE_VALUE)
+                items_fvs[item][user] = 0;
+            else {
+                items_fvs[item][user] = ((items_fvs[item][user] - min) / (max - min)) * 10;
+//                items_stats[item][0] ++;
+//                items_stats[item][2] += items_fvs[item][user];
+            }
         }
+        // Placing a new average
+//        items_stats[item][1] = items_stats[item][2] / items_stats[item][0];
+        cout << "AVG Item:" << item << ":" << items_stats[item][1] << endl;
     }
+
     cout << "normalized" << endl;
     print_array(users, items, items_fvs);
 #endif
