@@ -3,13 +3,14 @@
 //
 
 #include "Predictor.h"
+#include "ArrayUtils.h"
 #include <map>
 
 
 std::mutex mtx;
 
 void rank_for_vector(void *fv_pointer,size_t query_index, vector<vector<pair<size_t ,float>>> &results, size_t size_rows,
-                     size_t size_cols) {
+                     size_t size_cols, size_t results_pos) {
     float similarities[NN];
     size_t neighbors[NN];
     vector<pair<size_t, float>> result(NN);
@@ -56,7 +57,7 @@ void rank_for_vector(void *fv_pointer,size_t query_index, vector<vector<pair<siz
 
 
 //    mtx.lock();
-    results[query_index] = result;
+    results[results_pos] = result;
 //    mtx.unlock();
 }
 
@@ -68,18 +69,18 @@ std::string now(const char *format = "%c") {
 }
 
 
-vector<vector<pair<size_t, float>>> rank_vectors(float **feature_vectors, vector<size_t>target_items,
+vector<vector<pair<size_t, float>>> rank_vectors(float **feature_vectors, vector<size_t> targets,
                                                  size_t size_rows, size_t size_cols) {
-    vector<vector<pair<size_t ,float>>> results(target_items.size(), vector<pair<size_t ,float>>(NN));
+    vector<vector<pair<size_t ,float>>> results(targets.size(), vector<pair<size_t ,float>>(NN));
     void *first = (float *) feature_vectors;
     std::thread threads_active[NTHREADS];
     size_t threads_count = 0;
     timestamp_t t1, t0 = get_timestamp();
-    for (size_t ind_ext = 0; ind_ext < target_items.size(); ind_ext++) {
+    for (size_t ind_ext = 0; ind_ext < targets.size(); ind_ext++) {
         cout << "Computing distances for items: " << ind_ext + 1 << endl;
-        size_t query_index = target_items[ind_ext];
+        size_t query_index = targets[ind_ext];
         threads_active[threads_count] = std::thread(rank_for_vector, first, query_index, std::ref(results), size_rows,
-                                                    size_cols);
+                                                    size_cols, ind_ext);
         threads_count++;
         if (threads_count >= NTHREADS) {
             t1 = get_timestamp();
@@ -89,7 +90,7 @@ vector<vector<pair<size_t, float>>> rank_vectors(float **feature_vectors, vector
             threads_count = 0;
             for (size_t i = 0; i < NTHREADS; i++)
                 threads_active[i].join();
-        } else if (ind_ext + 1 >= target_items.size()) {
+        } else if (ind_ext + 1 >= targets.size()) {
             for (size_t i = 0; i < threads_count; i++)
                 threads_active[i].join();
         }
@@ -117,8 +118,8 @@ void review_predictions(const vector<vector<string>> &targets, vector<float> &pr
         string item_id = targets[target_pos][1];
         float item_count = 0, user_count = 0;
         float item_avg = 0, user_avg = 0;
-        if (target_pos == targets.size() - 1)
-            cout << "Last" << endl;
+//        if (target_pos == targets.size() - 1)
+//            cout << "Last" << endl;
 
         for (size_t target_index = 0; target_index < targets.size(); target_index++)
             if ((targets[target_index][0] == user_id) || (targets[target_index][1] == item_id)) {
@@ -132,12 +133,14 @@ void review_predictions(const vector<vector<string>> &targets, vector<float> &pr
                 }
             }
         // filling the missing with an average rating from user or item
+        if (item_count > 0) {
+            item_avg /= item_count;
+            predictions[target_pos] = item_avg;
+        }
+        else
         if (user_count > 0) {
             user_avg /= user_count;
             predictions[target_pos] = user_avg;
-        } else if (item_count > 0) {
-            item_avg /= item_count;
-            predictions[target_pos] = item_avg;
         }
 
 
@@ -152,8 +155,8 @@ void avg_predictions(unordered_map<string, size_t> &users, unordered_map<string,
     {
         for (int index = 0; index < targets.size(); index++) {
 
-            int item_pos = items.at(targets[index][0]);
-            int user_pos = users.at(targets[index][1]);
+            int user_pos = users.at(targets[index][0]);
+            int item_pos = items.at(targets[index][1]);
 
             if (items_stats[item_pos][2] != -1)
                 predictions.push_back(items_stats[item_pos][1]);
@@ -288,8 +291,8 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
             if (users.find(targets[index][1]) == users.end())
                 missing_predictions.push_back(index);
         }
-        if (index == targets.size() - 1)
-            cout << "Last" << endl;
+//        if (index == targets.size() - 1)
+//            cout << "Last" << endl;
     }
 }
 
@@ -297,6 +300,7 @@ void item_predictions(unordered_map<string, size_t> &users, unordered_map<string
 void user_predictions(unordered_map<string, size_t> &items, unordered_map<string, size_t> &users,
                       vector<vector<float>> &items_stats, vector<vector<float>> &users_stats,
                       vector<vector<pair<size_t, float>>> &ranking_user, vector<vector<string>> &targets,
+                      vector<size_t> target_users,
                       vector<float> &predictions, vector<float> &missing_predictions, float **users_fvs) {
     for (size_t index = 0; index < targets.size(); index++) {
         float item_avg = 5;
@@ -315,13 +319,18 @@ void user_predictions(unordered_map<string, size_t> &items, unordered_map<string
             size_t query_pos =users.at(targets[index][0]);
             // Capturing the average rating from the nearest neighbors of the user
             float base = 0;
+            size_t target_user_index = find_by_value<size_t>(target_users, query_pos);
+
             for (size_t vect_index = 0; vect_index < NN; vect_index++) {
-                size_t user_pos = ranking_user[query_pos][vect_index].first;
+                size_t user_pos = ranking_user[target_user_index][vect_index].first;
                 float value = users_fvs[user_pos][item_pos];
                 if ((value == 0) || isnan(value))
                     value = users_stats[user_pos][1];
-                user_avg += ranking_user[query_pos][vect_index].second * value;
-                base +=  ranking_user[query_pos][vect_index].second;
+#ifdef DEBUG
+                cout << ranking_user[target_user_index][vect_index].second << "*" << value << endl;
+#endif
+                user_avg += ranking_user[target_user_index][vect_index].second * value;
+                base +=  ranking_user[target_user_index][vect_index].second;
             }
             // Average them
             user_avg /= base;
@@ -338,7 +347,8 @@ void user_predictions(unordered_map<string, size_t> &items, unordered_map<string
             if (items.find(targets[index][1]) == items.end())
                 missing_predictions.push_back(index);
         }
-        if (index == targets.size() - 1)
-            cout << "Last" << endl;
+//        if (index == targets.size() - 1)
+//            cout << "Last" << endl;
     }
 }
+

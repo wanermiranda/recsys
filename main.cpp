@@ -1,3 +1,6 @@
+#define NONE_VALUE -99
+//#define DEBUG
+
 #include <iostream>
 #include <map>
 #include <algorithm>
@@ -8,8 +11,6 @@
 #include "Predictor.h"
 
 
-#define NONE_VALUE -99
-#define DEBUG
 using namespace std;
 
 
@@ -29,15 +30,13 @@ void extract_norm_fvs(const unordered_map<string, size_t> &items, const unordere
                       const vector<vector<string>> &rows, float **users_fvs, vector<vector<float>> &items_stats,
                       vector<vector<float>> &users_stats);
 
-void print_array(size_t M, size_t N,
-                 float *const *users_fvs);
 
 void init_array(const unordered_map<string, size_t> &items, const unordered_map<string, size_t> &users,
                 float **users_fvs);
 
 int main(int argc, char **argv) {
-    if (argc < 4) {
-        cout << "usage: ./TP1_Recsys ratings.csv targets.csv output.csv";
+    if (argc < 3) {
+        cout << "usage: ./TP1_Recsys ratings.csv targets.csv > output.csv";
         exit(1);
     }
     unordered_map<string, size_t> items;
@@ -61,13 +60,13 @@ int main(int argc, char **argv) {
 
     cout << "Rows: " << rows.size() << " items: " << items.size() << " users: " << users.size()
     << " Targets :" << target_users.size() << endl;
-    cout << "Transposing  data..." << endl;
+//    cout << "Transposing  data..." << endl;
 
     // Computing items average
     compute_stats_avg(items_stats);
     compute_stats_avg(users_stats);
 
-
+// This was used when trying to implement the users and items based
     float **users_fvs = alloc_2D_array<float>(users.size(), items.size());
     init_array(items, users, users_fvs);
 
@@ -75,61 +74,47 @@ int main(int argc, char **argv) {
 
 
 
-    // Computing user average after removing the item bias
-//    compute_stats_avg(users_stats);
-
-
-    cout << "Computing and Ranking Similiraties..." << endl;
+//    cout << "Computing and Ranking Similiraties..." << endl;
     rows.clear();
-
+// This was used when trying to implement the users and items based
     vector<vector<pair<size_t, float>>> ranking_user = rank_vectors(users_fvs, target_users, users.size(),
                                                                     items.size());
 
 
 
-
-/*******/
-
-
-    cout << "Pre-processing predictions..." <<
-    endl;
+//    cout << "Pre-processing predictions..." <<
+//    endl;
     vector<float> predictions;
     vector<float> missing_predictions;
+// This was used when trying to implement the users and items based
     user_predictions(items, users,
                      items_stats, users_stats,
                      ranking_user,
-                     targets, predictions,
+                     targets, target_users, predictions,
                      missing_predictions, users_fvs
     );
-    delete
-            users_fvs;
+    delete users_fvs;
 //    avg_predictions_personalized(items, users, items_stats, users_stats, targets, predictions, missing_predictions);
 
-//    avg_predictions(items, users, items_stats, users_stats, targets, predictions, missing_predictions);
+//    avg_predictions(users, items, users_stats, items_stats, targets, predictions, missing_predictions);
 
-    items.
+    items.clear();
 
-            clear();
+    users.clear();
 
-    users.
+    items_stats.clear();
 
-            clear();
-
-    items_stats.
-
-            clear();
-
-    cout << "Review predictions..." <<
-    endl;
+//    cout << "Review predictions..." <<
+//    endl;
     review_predictions(targets, predictions, missing_predictions);
 
 
-    cout << "Doing predictions..." <<
-    endl;
+//    cout << "Doing predictions..." <<
+//    endl;
 
-    ofstream mixed_output(argv[3]);
 
-    mixed_output << "itemId:userId,Prediction" <<
+
+    cout << "UserId:ItemId,Prediction" <<
     endl;
     for (
             size_t index = 0;
@@ -138,14 +123,10 @@ int main(int argc, char **argv) {
                     size();
 
             index++) {
-        mixed_output << targets[index][0] << ':' << targets[index][1] << ','
+        cout << targets[index][0] << ':' << targets[index][1] << ','
         << predictions[index] <<
         endl;
     }
-
-    mixed_output.
-
-            close();
 
     return 0;
 }
@@ -159,16 +140,6 @@ void init_array(const unordered_map<string, size_t> &items, const unordered_map<
     }
 }
 
-void print_array(size_t M, size_t  N,
-                 float *const *users_fvs) {
-#ifdef DEBUG
-    for (int row = 0; row < M; row++) {
-        for (int col = 0; col < N; col++)
-            cout << users_fvs[row][col] << "\t";
-        cout << endl;
-    }
-#endif // DEBUG
-}
 
 void extract_norm_fvs(const unordered_map<string, size_t> &items, const unordered_map<string, size_t> &users,
                       const vector<vector<string>> &rows, float **users_fvs, vector<vector<float>> &items_stats,
@@ -185,11 +156,11 @@ void extract_norm_fvs(const unordered_map<string, size_t> &items, const unordere
 
         users_fvs[user_pos][item_pos] = vote;
     }
-    print_array(users.size(), items.size(),users_fvs);
+    debug_print_array(users.size(), items.size(), users_fvs);
 
 #ifdef BIAS
     cout << "Clean" << endl;
-    print_array(users.size(), items.size(),users_fvs);
+    debug_print_array(users.size(), items.size(),users_fvs);
 
     for (int user = 0; user < users.size(); user++) {
 
@@ -211,7 +182,7 @@ void extract_norm_fvs(const unordered_map<string, size_t> &items, const unordere
     }
 
     cout << "Adjusted" << endl;
-    print_array(users.size(), items.size(),users_fvs);
+    debug_print_array(users.size(), items.size(),users_fvs);
 
     for (int user = 0; user < users.size(); user++) {
         float min = min_max[user][0];
@@ -237,7 +208,16 @@ void extract_norm_fvs(const unordered_map<string, size_t> &items, const unordere
 
 
     cout << "normalized" << endl;
-    print_array(users.size(), items.size(),users_fvs);
+    debug_print_array(users.size(), items.size(),users_fvs);
+#else
+    for (int user = 0; user < users.size(); user++) {
+        for (int item = 0; item < items.size(); item++) {
+            if (users_fvs[user][item] == NONE_VALUE)
+                users_fvs[user][item] = 0;
+        }
+    }
+    debug_print_array(users.size(), items.size(), users_fvs);
+
 #endif // BIAS
 }
 
@@ -251,8 +231,6 @@ void read_ratings(const char *filename, unordered_map<string, size_t> &items, un
     ratings_file >> row_reader;
     while (ratings_file >> row_reader) {
         vector<string> item_user = split(row_reader[0], ':');
-//        if ((items.find(item_user[1]) != items.end()))
-        {
             rows.push_back(vector<string>({item_user[0], item_user[1], row_reader[1]}));
             row_count++;
 
@@ -283,7 +261,6 @@ void read_ratings(const char *filename, unordered_map<string, size_t> &items, un
                 users.insert({item_user[0], users.size()});
                 users_stats.push_back(vector<float>({1, 0, vote}));
             }
-        }
     }
     ratings_file.close();
 }
@@ -294,26 +271,34 @@ void read_targets(char *filename, unordered_map<string, size_t> &items, unordere
                   vector<vector<string>> &targets,
                   vector<size_t> &target_users) {
     CSVReader row_reader;
-    cout << "Reading targets..." << endl;
+//    cout << "Reading targets..." << endl;
     ifstream targets_file(filename);
-    size_t item_count = 0, user_count = 0, target_count = 0;
+    size_t target_count = 0;
     // Skip the header
     targets_file >> row_reader;
+    unordered_map<string, size_t> located_users;
 
     while (targets_file >> row_reader) {
 
         targets.push_back(split(row_reader[0], ':'));
 
-        if (items.find(targets[target_count][1]) == items.end()) {
-            items.insert({targets[target_count][1], item_count++});
-            items_stats.push_back(vector<float>({0, 0, -1}));
-        }
 
         if (users.find(targets[target_count][0]) == users.end()) {
-            target_users.push_back(user_count);
-            users.insert({targets[target_count][0], user_count++});
             users_stats.push_back(vector<float>({0, 0, -1}));
+            users.insert({targets[target_count][0], users.size()});
         }
+
+        if (located_users.find(targets[target_count][0]) == located_users.end()) {
+            size_t user_pos = users.at(targets[target_count][0]);
+            target_users.push_back(user_pos);
+            located_users.insert({targets[target_count][0], user_pos});
+        }
+
+        if (items.find(targets[target_count][1]) == items.end()) {
+            items_stats.push_back(vector<float>({0, 0, -1}));
+            items.insert({targets[target_count][1], items.size()});
+        }
+
         target_count++;
     }
 

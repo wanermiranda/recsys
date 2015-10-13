@@ -1,7 +1,12 @@
 UserId:ItemId,
+u1:i1,0
+u1:i2,0
 u1:i3,1
 u1:i4,3
+u1:i5,0
 u1:i6,2
+u1:i7,0
+u1:i8,0
 u2:i1,1
 u2:i2,2
 u2:i3,5

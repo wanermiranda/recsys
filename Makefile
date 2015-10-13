@@ -8,7 +8,7 @@ DEBUG = -g
 APPNAME = TP1_Recsys
 
 #Object
-OBJS = main.cpp CSVReader.cpp CSVReader.h StringUtils.cpp StringUtils.h Predictor.cpp Predictor.h ArrayUtils.h distances.h distances.cpp
+OBJS = main.cpp CSVReader.cpp CSVReader.h StringUtils.cpp StringUtils.h Predictor.cpp Predictor.h ArrayUtils.h ArrayUtils.cpp distances.h distances.cpp
 release : ; $(G++) $(OBJS) -o $(APPNAME) $(LIBS) $(CFLAGS) $(OPTS)
 
 debug	: ; $(G++) $(OBJS) -o $(APPNAME) $(LIBS) $(CFLAGS) $(DEBUG)

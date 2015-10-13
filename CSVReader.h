@@ -19,20 +19,20 @@ public:
             std::cout << "Index out of bounds." << std::endl;
             return NULL;
         }
-        else return m_data[index];
+        else return _current_line[index];
 
 
     }
     std::size_t size() const
     {
-        return m_data.size();
+        return _current_line.size();
     }
 
     std::vector<std::string> last_line();
 
     void read_line(std::ifstream& str);
 private:
-    std::vector<std::string> m_data;
+    std::vector<std::string> _current_line;
 };
 
 std::ifstream& operator>>(std::ifstream& str,CSVReader& data);
